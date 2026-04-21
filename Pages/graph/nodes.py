@@ -5,17 +5,19 @@ from .state import AgentState
 import json
 from typing import Literal
 from .tools import complete_python_task
-from langgraph.prebuilt import ToolInvocation, ToolExecutor
 import os
 
-
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+# Configuration du LLM
+llm = ChatOpenAI(
+    model="gpt-4o-mini", 
+    temperature=0, 
+    api_key="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"
+)
 
 tools = [complete_python_task]
-
 model = llm.bind_tools(tools)
-tool_executor = ToolExecutor(tools)
 
+# Chargement du prompt
 with open(os.path.join(os.path.dirname(__file__), "../prompts/main_prompt.md"), "r") as file:
     prompt = file.read()
 
@@ -39,62 +41,41 @@ def create_data_summary(state: AgentState) -> str:
             summary += f"\n\nVariable: {v}"
     return summary
 
-def route_to_tools(
-    state: AgentState,
-) -> Literal["tools", "__end__"]:
-    """
-    Use in the conditional_edge to route to the ToolNode if the last message
-    has tool calls. Otherwise, route back to the agent.
-    """
-
+def route_to_tools(state: AgentState) -> Literal["tools", "__end__"]:
     if messages := state.get("messages", []):
         ai_message = messages[-1]
     else:
-        raise ValueError(f"No messages found in input state to tool_edge: {state}")
+        raise ValueError(f"No messages found in input state: {state}")
     
     if hasattr(ai_message, "tool_calls") and len(ai_message.tool_calls) > 0:
         return "tools"
     return "__end__"
 
 def call_model(state: AgentState):
-
-    current_data_template  = """The following data is available:\n{data_summary}"""
+    current_data_template = "The following data is available:\n{data_summary}"
     current_data_message = HumanMessage(content=current_data_template.format(data_summary=create_data_summary(state)))
-    state["messages"] = [current_data_message] + state["messages"]
+    
+    # On ajoute le résumé des données au contexte
+    response = model.invoke({**state, "messages": [current_data_message] + state["messages"]})
+    return {"messages": [response], "intermediate_outputs": [current_data_message.content]}
 
-    llm_outputs = model.invoke(state)
+def call_model(state: AgentState):
+    # On prépare le résumé des données
+    data_summary = create_data_summary(state)
+    current_data_template = "The following data is available:\n{data_summary}"
+    
+    # IMPORTANT : On ne modifie PAS state["messages"] directement ici pour éviter les doublons
+    # On injecte l'information système de manière ponctuelle pour l'appel au modèle
+    system_context = HumanMessage(content=current_data_template.format(data_summary=data_summary))
+    
+    # On appelle le modèle avec le contexte des données + l'historique
+    response = model.invoke({
+        **state, 
+        "messages": [system_context] + state["messages"]
+    })
 
-    return {"messages": [llm_outputs], "intermediate_outputs": [current_data_message.content]}
-
-def call_tools(state: AgentState):
-    last_message = state["messages"][-1]
-    tool_invocations = []
-    if isinstance(last_message, AIMessage) and hasattr(last_message, 'tool_calls'):
-        tool_invocations = [
-            ToolInvocation(
-                tool=tool_call["name"],
-                tool_input={**tool_call["args"], "graph_state": state}
-            ) for tool_call in last_message.tool_calls
-        ]
-
-    responses = tool_executor.batch(tool_invocations, return_exceptions=True)
-    tool_messages = []
-    state_updates = {}
-
-    for tc, response in zip(last_message.tool_calls, responses):
-        if isinstance(response, Exception):
-            raise response
-        message, updates = response
-        tool_messages.append(ToolMessage(
-            content=str(message),
-            name=tc["name"],
-            tool_call_id=tc["id"]
-        ))
-        state_updates.update(updates)
-
-    if 'messages' not in state_updates:
-        state_updates["messages"] = []
-
-    state_updates["messages"] = tool_messages 
-    return state_updates
-
+    # On ne retourne que le nouveau message de l'IA
+    return {
+        "messages": [response], 
+        "intermediate_outputs": [system_context.content]
+    }
