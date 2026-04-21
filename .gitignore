@@ -10,3 +10,18 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Environnement virtuel
+.venv/
+venv/
+ENV/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+
+# Variables d'environnement (Clés API)
+.env
+
+# Dossiers d'IDE
+.vscode/
+

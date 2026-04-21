@@ -1,7 +1,7 @@
 pandas
 streamlit
 langchain-core
-sklearn
+scikit-learn
 plotly
 langchain
 langgraph
