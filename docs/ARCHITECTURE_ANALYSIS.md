@@ -87,3 +87,26 @@ CORS (*Cross-Origin Resource Sharing*) est un mécanisme de sécurité implémen
 Le `print()` envoie simplement du texte dans la console. C'est illisible et inexploitable à grande échelle.
 - **Débogage en production (1000 req/min)** : Avec un tel volume, il est impossible de lire les logs à l'œil nu. On utilise des agrégateurs (comme ELK ou Datadog). Le logging structuré permet de filtrer instantanément par `request_id`, par `user_id` ou par niveau d'erreur (`ERROR`, `INFO`).
 - **Pourquoi le format JSON ?** - Le JSON est "machine-readable". Il permet aux outils d'analyse de parser automatiquement les champs sans avoir à écrire des expressions régulières (Regex) complexes. On peut ainsi générer des alertes automatiques si le temps de réponse moyen dépasse un certain seuil.
+
+
+
+
+# 🔐 Synthèse Sécurité : Authentification & Autorisation
+
+## 1. Hachage des Mots de Passe
+* **Concept :** Transformation irréversible (fonction à sens unique). On ne stocke jamais le texte clair, uniquement une empreinte (hash).
+* **Résilience aux fuites :** Si la base de données est compromise, l'attaquant ne récupère que des hashs. Sans le mot de passe original, il ne peut pas usurper l'identité des utilisateurs.
+* **Algorithmes :**
+    * **Recommandés (Lents) :** `bcrypt` (utilisé ici) ou `Argon2`. Leur lenteur volontaire rend le "brute-force" mathématiquement trop coûteux.
+    * **À Proscrire :** `SHA256` ou `MD5`. Trop rapides, ils permettent de tester des milliards de combinaisons par seconde.
+* **Test du Hash :** S'authentifier avec un hash échoue systématiquement. Le système hacherait la chaîne du hash, produisant une empreinte totalement différente de celle en base.
+
+
+
+## PARTIE 2. Tokens JWT (JSON Web Tokens)
+* **Expiration :** Un JWT agit comme un badge d'accès temporaire. L'expiration (`exp`) limite la durée de validité si le token est intercepté.
+* **Risque des tokens permanents :** Un token sans expiration est une "clé maîtresse" éternelle. En cas de vol, l'attaquant a un accès illimité tant que la `SECRET_KEY` du serveur n'est pas réinitialisée.
+* **Durées Standards :**
+    * **Access Token :** 15 min à 1 heure (usage immédiat, durée courte pour limiter les risques).
+    * **Refresh Token :** 7 à 30 jours (permet de renouveler l'accès sans ressaisir les identifiants).
+* **Gestion du Refresh :** En production, on utilise un Access Token (stocké en mémoire) et un Refresh Token (stocké dans un cookie sécurisé `HttpOnly`) pour combiner sécurité maximale et expérience utilisateur fluide.
