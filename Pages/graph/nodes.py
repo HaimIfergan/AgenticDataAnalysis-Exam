@@ -1,5 +1,6 @@
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
+# AJOUT DE SystemMessage ICI
+from langchain_core.messages import AIMessage, ToolMessage, HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from .state import AgentState
 import json
@@ -52,30 +53,46 @@ def route_to_tools(state: AgentState) -> Literal["tools", "__end__"]:
     return "__end__"
 
 def call_model(state: AgentState):
-    current_data_template = "The following data is available:\n{data_summary}"
-    current_data_message = HumanMessage(content=current_data_template.format(data_summary=create_data_summary(state)))
-    
-    # On ajoute le résumé des données au contexte
-    response = model.invoke({**state, "messages": [current_data_message] + state["messages"]})
-    return {"messages": [response], "intermediate_outputs": [current_data_message.content]}
-
-def call_model(state: AgentState):
-    # On prépare le résumé des données
+    """
+    Appelle le modèle avec le dictionnaire attendu par ChatPromptTemplate.
+    """
     data_summary = create_data_summary(state)
-    current_data_template = "The following data is available:\n{data_summary}"
     
-    # IMPORTANT : On ne modifie PAS state["messages"] directement ici pour éviter les doublons
-    # On injecte l'information système de manière ponctuelle pour l'appel au modèle
-    system_context = HumanMessage(content=current_data_template.format(data_summary=data_summary))
+    # Message système pour injecter les données sans polluer l'historique permanent
+    system_data_info = SystemMessage(
+        content=f"The following data is available:\n{data_summary}"
+    )
     
-    # On appelle le modèle avec le contexte des données + l'historique
+    # On passe un dictionnaire avec la clé 'messages' demandée par le template
     response = model.invoke({
-        **state, 
-        "messages": [system_context] + state["messages"]
+        "messages": [system_data_info] + state["messages"]
     })
 
-    # On ne retourne que le nouveau message de l'IA
     return {
-        "messages": [response], 
-        "intermediate_outputs": [system_context.content]
+        "messages": [response],
+        "intermediate_outputs": [system_data_info.content]
     }
+
+def call_tools(state: AgentState):
+    """
+    Exécution manuelle pour éviter le bug 'No message found in input'.
+    """
+    last_message = state["messages"][-1]
+    tool_messages = []
+
+    if hasattr(last_message, "tool_calls"):
+        for tool_call in last_message.tool_calls:
+            # On appelle l'outil avec .invoke()
+            result, updates = complete_python_task.invoke({
+                **tool_call["args"], 
+                "graph_state": state
+            })
+            
+            # On crée le ToolMessage obligatoire pour valider l'étape
+            tool_messages.append(ToolMessage(
+                content=str(result),
+                tool_call_id=tool_call["id"],
+                name=tool_call["name"]
+            ))
+
+    return {"messages": tool_messages}
