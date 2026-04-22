@@ -58,3 +58,32 @@ graph TD
 | **Async** | Celery / Redis | Gestion efficace des tâches longues sans bloquer l'expérience utilisateur. |
 | **Authentification** | JWT | Standard sécurisé pour une architecture micro-services "stateless". |
 | **Sécurité** | Sandbox Docker | Isolation totale des processus d'exécution de code Python. |    
+
+
+## Analyse des Choix Techniques (Partie 2)
+
+### 1. Architecture Backend : FastAPI vs Streamlit
+
+**Pourquoi FastAPI au lieu de garder Streamlit comme backend ?**
+Streamlit est un framework conçu pour le prototypage rapide d'interfaces utilisateur ("Frontend-as-Code"). Il n'est pas optimisé pour servir d'API robuste. 
+- **Limites de Streamlit** : Il manque de gestion native pour les routes REST (GET, POST, etc.), les middlewares complexes, et la validation de données (Pydantic). De plus, chaque interaction utilisateur peut déclencher une réexécution du script, ce qui est inefficace pour un backend.
+- **Mise à l'échelle horizontale** : FastAPI est nativement asynchrone et "stateless". On peut facilement multiplier les instances du serveur derrière un Load Balancer. Comme le serveur ne garde pas de données en mémoire vive locale entre les requêtes, n'importe quelle instance peut répondre à n'importe quel utilisateur.
+- **Stateful vs Stateless** : 
+    - **Stateful (avec état)** : Le serveur conserve des informations sur la session utilisateur (ex: Streamlit avec `session_state`). Si le serveur tombe, la session est perdue.
+    - **Stateless (sans état)** : Le serveur ne stocke rien. Chaque requête contient tout le nécessaire (ex: Token JWT) pour être traitée. C'est la clé de la scalabilité moderne.
+
+### 2. Sécurité et Connectivité : Le Middleware CORS
+
+**Pourquoi un middleware CORS ?**
+CORS (*Cross-Origin Resource Sharing*) est un mécanisme de sécurité implémenté par les navigateurs. Il empêche un script provenant d'une origine (ex: `localhost:8501`) d'accéder à des ressources d'une autre origine (ex: `localhost:8000`) sans permission.
+- **Sans configuration CORS** : Le navigateur bloquera les requêtes HTTP du frontend vers le backend, affichant une erreur de sécurité, même si le serveur fonctionne bien.
+- **En production, faut-il autoriser `origins=["*"]` ?**
+    - **Non**. Utiliser l'astérisque `*` autorise n'importe quel site web malveillant à effectuer des requêtes sur votre API depuis le navigateur d'un utilisateur. 
+    - **Solution** : On doit définir une "Whitelist" (liste blanche) contenant uniquement l'URL officielle de notre frontend.
+
+### 3. Observabilité : Logging Structuré
+
+**Pourquoi le logging structuré au lieu de print() ?**
+Le `print()` envoie simplement du texte dans la console. C'est illisible et inexploitable à grande échelle.
+- **Débogage en production (1000 req/min)** : Avec un tel volume, il est impossible de lire les logs à l'œil nu. On utilise des agrégateurs (comme ELK ou Datadog). Le logging structuré permet de filtrer instantanément par `request_id`, par `user_id` ou par niveau d'erreur (`ERROR`, `INFO`).
+- **Pourquoi le format JSON ?** - Le JSON est "machine-readable". Il permet aux outils d'analyse de parser automatiquement les champs sans avoir à écrire des expressions régulières (Regex) complexes. On peut ainsi générer des alertes automatiques si le temps de réponse moyen dépasse un certain seuil.
