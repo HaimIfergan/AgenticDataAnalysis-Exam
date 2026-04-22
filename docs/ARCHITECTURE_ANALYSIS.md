@@ -110,3 +110,50 @@ Le `print()` envoie simplement du texte dans la console. C'est illisible et inex
     * **Access Token :** 15 min à 1 heure (usage immédiat, durée courte pour limiter les risques).
     * **Refresh Token :** 7 à 30 jours (permet de renouveler l'accès sans ressaisir les identifiants).
 * **Gestion du Refresh :** En production, on utilise un Access Token (stocké en mémoire) et un Refresh Token (stocké dans un cookie sécurisé `HttpOnly`) pour combiner sécurité maximale et expérience utilisateur fluide.
+
+
+# 🤖 2.4 Spécifications de l'Agent d'Analyse
+
+Cette section définit les responsabilités et l'architecture logique de l'agent intelligent intégré au backend. L'agent n'est pas un simple script statique, mais une entité capable de raisonner pour manipuler des données complexes.
+
+---
+
+### 🎯 Objectifs et Capacités
+L'agent est conçu pour couvrir l'intégralité du cycle de vie d'une analyse de données :
+
+1. **Exploration & Description :** - Identification automatique des structures de données (colonnes, types).
+   - Génération de statistiques descriptives pour offrir une vue d'ensemble immédiate du dataset.
+2. **Nettoyage Automatisé (Data Cleaning) :**
+   - Détection et traitement des valeurs manquantes (`NaN`).
+   - Suppression des doublons et conversion intelligente des types de données (ex: transformer une chaîne en date).
+3. **Visualisation Interactive :**
+   - Création de graphiques via la bibliothèque **Plotly**.
+   - Support de plusieurs formats : histogrammes pour la distribution, nuages de points pour les corrélations, et séries temporelles.
+4. **Analyse Statistique :**
+   - Calcul de matrices de corrélation.
+   - Extraction de tendances significatives au sein des données.
+5. **Exécution de Code Python (Sandbox) :**
+   - Capacité à générer et exécuter du code `pandas` et `numpy`.
+   - **Sécurité :** L'exécution se fait dans un environnement restreint (bac à sable) pour empêcher toute interaction non autorisée avec le système hôte.
+
+---
+
+###  Architecture du Raisonnement (Workflow)
+L'agent suit une boucle logique de type **ReAct** (Reason + Act) :
+
+
+
+* **Thought (Pensée) :** L'agent analyse la demande utilisateur et planifie les étapes (ex: "Je dois d'abord nettoyer la colonne 'Prix' avant de calculer la moyenne").
+* **Action :** Génération du code Python spécifique à l'étape.
+* **Observation :** Analyse du résultat renvoyé par l'interpréteur (données ou message d'erreur).
+* **Final Answer :** Synthèse des résultats en langage naturel pour l'utilisateur.
+
+---
+
+### Stack Technique de l'Agent
+| Composant | Technologie | Rôle |
+| :--- | :--- | :--- |
+| **Moteur LLM** | OpenAI / Anthropic / Local | Cerveau décisionnel et génération de code. |
+| **Traitement de données** | `Pandas`, `Numpy` | Manipulation des DataFrames. |
+| **Visualisation** | `Plotly` | Rendu graphique haute qualité. |
+| **Interface API** | `FastAPI` | Communication entre l'utilisateur et l'agent. |

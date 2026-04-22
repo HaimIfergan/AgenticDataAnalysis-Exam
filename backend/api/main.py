@@ -13,36 +13,31 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 
-# --- Imports de tes nouveaux modules ---
+# --- Imports de tes modules ---
 from backend.models.database import engine, Base, get_db
 from backend.models.user import User
+from backend.models.chat import ChatMessage
 from backend.api.auth import hash_password, verify_password, create_access_token
+from backend.agents.agent_manager import AgentManager  # Import de l'Agent
 
-# --- Initialisation de la Base de Données ---
-# Crée les tables au démarrage (User, etc.)
-Base.metadata.create_all(bind=engine)
-
-# --- Configuration du Logging Structuré ---
+# --- Configuration du Logging ---
 structlog.configure(
     processors=[
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
-        structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.JSONRenderer(),
     ],
     wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-    context_class=dict,
     logger_factory=structlog.PrintLoggerFactory(),
     cache_logger_on_first_use=True,
 )
-
 logger = structlog.get_logger()
 
 app = FastAPI(
     title="Agentic Data Analysis API",
-    description="Backend de production pour l'analyse de données agentique",
+    description="Backend avec Persistance de Session (Partie 2.5)",
     version="1.0.0"
 )
 
@@ -57,7 +52,6 @@ class UserResponse(BaseModel):
     username: str
     email: EmailStr
     is_active: bool
-
     class Config:
         from_attributes = True
 
@@ -70,90 +64,62 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Middleware Request ID & Logging ---
-@app.middleware("http")
-async def add_request_id_and_log(request: Request, call_next: Callable):
-    request_id = str(uuid.uuid4())
-    structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(request_id=request_id)
-    
-    start_time = time.perf_counter()
-    response: Response = await call_next(request)
-    process_time = time.perf_counter() - start_time
-    
-    response.headers["X-Request-ID"] = request_id
-    
-    logger.info(
-        "http_request",
-        method=request.method,
-        path=request.url.path,
-        status=response.status_code,
-        duration=f"{process_time:.4f}s"
-    )
-    return response
-
-# --- Gestionnaire d'Exceptions Global ---
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    logger.error("global_exception", error=str(exc), path=request.url.path)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "Une erreur interne est survenue. Veuillez contacter le support.", 
-            "request_id": structlog.contextvars.get_contextvars().get("request_id")
-        },
-    )
-
 # --- Endpoints Authentification ---
 
-@app.post("/api/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/auth/register", response_model=UserResponse)
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
-    # Vérifier si l'utilisateur existe déjà
     db_user = db.query(User).filter((User.username == user_in.username) | (User.email == user_in.email)).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Username or email already registered")
-    
-    # Création du nouvel utilisateur
-    new_user = User(
-        username=user_in.username,
-        email=user_in.email,
-        hashed_password=hash_password(user_in.password)
-    )
+    new_user = User(username=user_in.username, email=user_in.email, hashed_password=hash_password(user_in.password))
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    logger.info("user_registered", username=new_user.username)
     return new_user
 
 @app.post("/api/auth/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
+        raise HTTPException(status_code=401, detail="Incorrect credentials")
     access_token = create_access_token(data={"sub": user.username})
-    logger.info("user_logged_in", username=user.username)
     return {"access_token": access_token, "token_type": "bearer"}
 
-# --- Métriques Prometheus ---
-REQUEST_COUNT = Counter("api_requests_total", "Total des requêtes API", ["method", "endpoint", "http_status"])
+# --- SECTION AGENT & PERSISTANCE (PARTIE 2.5) ---
 
-@app.get("/metrics")
-def metrics():
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+@app.get("/api/chat/history/{user_id}")
+async def get_chat_history(user_id: int, db: Session = Depends(get_db)):
+    """
+    ROUTE CRUCIALE POUR LE TEST CRITIQUE : 
+    Récupère l'historique complet depuis la base de données.
+    """
+    agent = AgentManager(db=db, user_id=user_id)
+    history = agent.load_history()
+    return history
+
+@app.post("/api/chat/ask")
+async def ask_agent(user_id: int, query: str, db: Session = Depends(get_db)):
+    """
+    Implémente le Pattern ReAct avec persistance immédiate.
+    """
+    agent = AgentManager(db=db, user_id=user_id)
+    
+    # 1. Sauvegarde du message utilisateur en base
+    agent._save_message(role="user", content=query)
+    
+    # 2. Simulation d'exécution d'outil (Exemple: Visualisation)
+    # Dans la vraie logique, un LLM choisirait l'outil ici.
+    result = agent.execute_visualization(
+        thought=f"Analyse demandée : {query}",
+        python_code="import plotly.express as px\nfig = px.bar(df, title='Analyse')" # df est passé par le contexte
+    )
+    
+    return result
 
 # --- Endpoints Standard ---
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": time.time(), "version": "1.0.0"}
-
-@app.get("/")
-async def root():
-    return {"message": "Bienvenue sur l'API d'Agentic Data Analysis"}
+    return {"status": "healthy", "version": "1.0.0"}
 
 if __name__ == "__main__":
     import uvicorn
