@@ -47,6 +47,7 @@ graph TD
     Queue --> Worker[Celery Worker: Agent Logic]
     Worker --> Exec[Isolated Python Sandbox]
     Worker --> Store[(S3 Storage: Files & Pickles)]   
+```
 
 ### Décisions Techniques Clés
 
