@@ -1,5 +1,5 @@
 # 🛠️ Guide d'Installation et Configuration - DataStream AI
-#Par : Haïm IFERGAN (Formation AI LIORA  2O26)
+### Par : Haïm IFERGAN (Formation AI LIORA  2O26)
 
 Ce document détaille les étapes nécessaires pour configurer, installer et lancer la plateforme DataStream AI dans un environnement de développement ou de production.
 
