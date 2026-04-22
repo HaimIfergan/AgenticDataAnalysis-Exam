@@ -15,8 +15,7 @@ Avant de commencer, assurez-vous que les outils suivants sont installés sur vot
 * **Une clé API OpenAI** valide
 
 ---
-#Etape 0
-#on récupére le projet initial
+## 0.⚙️ on récupére le projet initial
 git clone https://github.com/DataScientest/AgenticDataAnalysis-Exam.git
 
 ## ⚙️ Configuration de l'Environnement
