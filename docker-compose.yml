@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # 1. Base de données PostgreSQL
+  db:
+    image: postgres:15
+    container_name: datastream-db
+    restart: always
+    environment:
+      POSTGRES_USER: user_admin
+      POSTGRES_PASSWORD: password_secure
+      POSTGRES_DB: datastream_ai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_admin -d datastream_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. Broker Redis pour Celery
+  redis:
+    image: redis:alpine
+    container_name: datastream-redis
+    restart: always
+
+  # 3. Backend FastAPI
+  backend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.python
+    container_name: datastream-backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user_admin:password_secure@db:5432/datastream_ai
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 4. Celery Worker (Isolation de l'exécution)
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.python
+    container_name: datastream-worker
+    restart: always
+    # On utilise python -m pour garantir que l'exécutable est trouvé dans le PATH
+    command: python -m celery -A backend.tasks.celery_app worker --loglevel=info
+    depends_on:
+      - redis
+      - db
+    environment:
+      - DATABASE_URL=postgresql://user_admin:password_secure@db:5432/datastream_ai
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+  # 5. Frontend Streamlit
+  frontend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.frontend
+    container_name: datastream-frontend
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://backend:8000
+    depends_on:
+      - backend
+
+  # 6. Flower (Surveillance Celery)
+  flower:
+    image: mher/flower
+    container_name: datastream-flower
+    restart: always
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+volumes:
+  postgres_data:
