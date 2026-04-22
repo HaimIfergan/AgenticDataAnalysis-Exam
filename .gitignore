@@ -1,4 +1,4 @@
-*.csv
+#*.csv
 .conda/
 __pycache__/
 *.ipynb_checkpoints/
