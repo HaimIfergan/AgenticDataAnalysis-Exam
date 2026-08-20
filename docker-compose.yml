@@ -31,6 +31,7 @@ services:
       dockerfile: infrastructure/docker/Dockerfile.python
     container_name: datastream-backend
     restart: always
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
     depends_on:
       db:
         condition: service_healthy
@@ -42,6 +43,7 @@ services:
       - DATABASE_URL=postgresql://user_admin:password_secure@db:5432/datastream_ai
       - REDIS_URL=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONPATH=/app
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -64,6 +66,7 @@ services:
       - DATABASE_URL=postgresql://user_admin:password_secure@db:5432/datastream_ai
       - REDIS_URL=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONPATH=/app
 
   # 5. Frontend Streamlit
   frontend:
