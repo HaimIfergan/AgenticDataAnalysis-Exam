@@ -31,7 +31,8 @@ services:
       dockerfile: infrastructure/docker/Dockerfile.python
     container_name: datastream-backend
     restart: always
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    # Correction effectuée ici pour pointer vers backend.api.main
+    command: uvicorn backend.api.main:app --host 0.0.0.0 --port 8000
     depends_on:
       db:
         condition: service_healthy
@@ -57,7 +58,7 @@ services:
       dockerfile: infrastructure/docker/Dockerfile.python
     container_name: datastream-worker
     restart: always
-    # On utilise python -m pour garantir que l'exécutable est trouvé dans le PATH
+    # Attention : vérifie si backend.tasks existe bien, sinon il faudra ajuster ce chemin aussi
     command: python -m celery -A backend.tasks.celery_app worker --loglevel=info
     depends_on:
       - redis
