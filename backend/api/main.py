@@ -41,6 +41,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# === AJOUT DE LA CRÉATION DES TABLES AU DÉMARRAGE ===
+@app.on_event("startup")
+def startup_event():
+    logger.info("Initialisation de la base de données : création des tables...")
+    Base.metadata.create_all(bind=engine)
+    logger.info("Tables créées avec succès !")
+# ====================================================
+
 # --- Schémas Pydantic ---
 class UserCreate(BaseModel):
     username: str
