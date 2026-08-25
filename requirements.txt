@@ -38,6 +38,7 @@ scikit-learn
 pydantic
 pydantic-settings
 structlog
+email-validator
 
 # Suite de Tests
 pytest
