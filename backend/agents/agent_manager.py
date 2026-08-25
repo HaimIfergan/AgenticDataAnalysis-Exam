@@ -21,8 +21,27 @@ class AgentManager:
             "df": self.df
         }
 
-    def _save_to_db(self, role: str, content: str, intermediate_outputs: dict = None):
-        """Sauvegarde les réponses dans la base de données"""
+    def load_history(self, session_id: int = None):
+        """Charge l'historique des messages depuis la base de données pour un utilisateur/session."""
+        query = self.db.query(ChatMessage).filter(ChatMessage.user_id == self.user_id)
+        if session_id:
+            query = query.filter(ChatMessage.session_id == session_id)
+        messages = query.order_by(ChatMessage.created_at.asc()).all()
+        
+        # Retourne les champs indispensables (id, created_at, role, content, etc.)
+        return [
+            {
+                "id": msg.id,
+                "role": msg.role,
+                "content": msg.content,
+                "created_at": str(msg.created_at) if msg.created_at else "",
+                "intermediate_outputs": msg.intermediate_outputs
+            }
+            for msg in messages
+        ]
+
+    def _save_message(self, role: str, content: str, intermediate_outputs: dict = None):
+        """Sauvegarde un message (utilisateur ou assistant) dans l'historique de la base de données."""
         new_msg = ChatMessage(
             user_id=self.user_id,
             role=role,
@@ -31,17 +50,21 @@ class AgentManager:
         )
         self.db.add(new_msg)
         self.db.commit()
+        self.db.refresh(new_msg)
+        return new_msg
+
+    def _save_to_db(self, role: str, content: str, intermediate_outputs: dict = None):
+        """Alias interne pour la rétrocompatibilité"""
+        return self._save_message(role, content, intermediate_outputs)
 
     def execute_visualization(self, thought: str, python_code: str):
         """Outil spécialisé pour Plotly"""
         stdout_capture = io.StringIO()
         with contextlib.redirect_stdout(stdout_capture):
             try:
-                # Exécution sécurisée avec exec()
                 local_vars = {}
                 exec(python_code, self.globals, local_vars)
                 
-                # Extraction de la figure Plotly
                 fig_json = None
                 for var in local_vars.values():
                     if isinstance(var, (go.Figure,)):
@@ -49,7 +72,7 @@ class AgentManager:
                         break
                 
                 output = stdout_capture.getvalue()
-                self._save_to_db("assistant", thought, {"type": "viz", "data": fig_json})
+                self._save_message("assistant", thought, {"type": "viz", "data": fig_json})
                 return {"status": "success", "output": output, "fig": fig_json}
             
             except Exception as e:
@@ -57,11 +80,34 @@ class AgentManager:
 
     def execute_data_cleaning(self, thought: str, python_code: str):
         """Outil spécialisé pour le nettoyage"""
-        # Logique similaire à viz mais sans capture de figure
-        # ... (implémentation de exec et capture stdout)
-        pass
+        stdout_capture = io.StringIO()
+        with contextlib.redirect_stdout(stdout_capture):
+            try:
+                local_vars = {}
+                exec(python_code, self.globals, local_vars)
+                
+                if 'df' in local_vars and isinstance(local_vars['df'], pd.DataFrame):
+                    self.df = local_vars['df']
+                    self.globals['df'] = self.df
+
+                output = stdout_capture.getvalue()
+                self._save_message("assistant", thought, {"type": "cleaning", "output": output})
+                return {"status": "success", "output": output}
+            
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
 
     def execute_statistical_analysis(self, thought: str, python_code: str):
         """Outil spécialisé pour les stats Scipy"""
-        # ... (implémentation de exec et capture stdout)
-        pass
+        stdout_capture = io.StringIO()
+        with contextlib.redirect_stdout(stdout_capture):
+            try:
+                local_vars = {}
+                exec(python_code, self.globals, local_vars)
+                
+                output = stdout_capture.getvalue()
+                self._save_message("assistant", thought, {"type": "stats", "output": output})
+                return {"status": "success", "output": output}
+            
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
