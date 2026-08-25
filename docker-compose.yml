@@ -58,6 +58,7 @@ services:
       dockerfile: infrastructure/docker/Dockerfile.python
     container_name: datastream-worker
     restart: always
+    working_dir: /app # Ajout de cette ligne
     # Attention : vérifie si backend.tasks existe bien, sinon il faudra ajuster ce chemin aussi
     command: python -m celery -A backend.tasks.celery_app worker --loglevel=info
     depends_on:
@@ -67,8 +68,7 @@ services:
       - DATABASE_URL=postgresql://user_admin:password_secure@db:5432/datastream_ai
       - REDIS_URL=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PYTHONPATH=/app
-
+      - PYTHONPATH=/app # Cette ligne est déjà présente et correcte
   # 5. Frontend Streamlit
   frontend:
     build:
