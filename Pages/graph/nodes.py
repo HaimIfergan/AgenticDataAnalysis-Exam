@@ -5,12 +5,14 @@ from .state import AgentState
 from .tools import complete_python_task
 from typing import Literal
 import os
+from dotenv import load_dotenv
 
-# Dans Pages/graph/nodes.py à la ligne 9 :
+load_dotenv()
+
 llm = ChatOpenAI(
-    model="gpt-4o-mini", 
-    temperature=0, 
-    api_key="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" # Remets ta clé ici
+    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+    temperature=0,
+    api_key=os.getenv("OPENAI_API_KEY"),
 )
 tools = [complete_python_task]
 model = llm.bind_tools(tools)
@@ -58,12 +60,29 @@ def call_model(state: AgentState):
 def call_tools(state: AgentState):
     last_message = state["messages"][-1]
     tool_messages = []
+    merged_state = {}
     for tool_call in last_message.tool_calls:
-        # Exécution de l'outil Python
-        result, _ = complete_python_task.invoke({**tool_call["args"], "graph_state": state})
-        tool_messages.append(ToolMessage(
-            content=str(result), 
-            tool_call_id=tool_call["id"], 
-            name=tool_call["name"]
-        ))
-    return {"messages": tool_messages}
+        # Exécution réelle du code Python sur le DataFrame
+        raw = complete_python_task.invoke(
+            {**tool_call["args"], "graph_state": state}
+        )
+        # Le tool renvoie (stdout, updated_state)
+        if isinstance(raw, tuple) and len(raw) == 2:
+            result, updated_state = raw
+        else:
+            result, updated_state = raw, {}
+
+        tool_messages.append(
+            ToolMessage(
+                content=str(result) if result is not None else "",
+                tool_call_id=tool_call["id"],
+                name=tool_call.get("name", "complete_python_task"),
+            )
+        )
+        if isinstance(updated_state, dict):
+            for key, value in updated_state.items():
+                if key in ("intermediate_outputs", "output_image_paths") and key in merged_state:
+                    merged_state[key] = list(merged_state[key]) + list(value)
+                else:
+                    merged_state[key] = value
+    return {"messages": tool_messages, **merged_state}

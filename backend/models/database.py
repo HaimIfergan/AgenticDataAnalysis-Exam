@@ -9,12 +9,17 @@ load_dotenv()
 
 # Récupération de l'URL de la base de données
 # Par défaut, utilise SQLite pour le développement local si DATABASE_URL n'est pas définie
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
 
 # Création de l'moteur SQLAlchemy
 # L'argument connect_args={"check_same_thread": False} est indispensable uniquement pour SQLite
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+# Déterminez les connect_args dynamiquement
+connect_args = {}
+if "sqlite" in SQLALCHEMY_DATABASE_URL:
+    connect_args["check_same_thread"] = False
+
+engine = create_engine( # Cette ligne manquait
+    SQLALCHEMY_DATABASE_URL, connect_args=connect_args
 )
 
 # Configuration de la fabrique de sessions (Prérequis 2.3 : Gestion de session)

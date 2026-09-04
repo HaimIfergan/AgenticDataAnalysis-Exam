@@ -1,8 +1,48 @@
-pandas
+# Frontend & API
 streamlit
-langchain-core
-scikit-learn
-plotly
+fastapi
+uvicorn
+python-multipart
+prometheus_client
+
+# File d'attente & Asynchronisme
+celery
+redis
+
+# Base de données & ORM
+sqlalchemy
+alembic
+psycopg2-binary
+
+# Sécurité & Authentification
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt
+
+# Agent IA & Frameworks
 langchain
-langgraph
+langchain-core
+langchain-community
+langchain-experimental
 langchain-openai
+langgraph
+
+# Data & Calcul
+pandas
+numpy
+plotly<6.0.0
+scipy
+scikit-learn
+
+# Configuration & Logging
+pydantic
+pydantic-settings
+structlog
+email-validator
+python-dotenv
+openpyxl
+
+# Suite de Tests
+pytest
+pytest-asyncio
+pytest-cov
