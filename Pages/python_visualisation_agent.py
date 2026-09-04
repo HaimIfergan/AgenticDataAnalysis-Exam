@@ -55,11 +55,11 @@ with t2:
                     st.write(msg.content)
                     # Scan des fichiers pickles
                     if os.path.exists(PICKLE_DIR):
-                        for f_name in os.listdir(PICKLE_DIR):
+                        for i, f_name in enumerate(os.listdir(PICKLE_DIR)):
                             if f_name.endswith(".pickle"):
                                 with open(os.path.join(PICKLE_DIR, f_name), "rb") as f:
                                     fig = pickle.load(f)
-                                st.plotly_chart(fig)
+                                st.plotly_chart(fig, key=f"plot_{i}_{f_name}")
 
     st.chat_input("Ta question ?", key="user_input", on_submit=handle_query)
 

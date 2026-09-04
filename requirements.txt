@@ -30,7 +30,7 @@ langgraph
 # Data & Calcul
 pandas
 numpy
-plotly
+plotly<6.0.0
 scipy
 scikit-learn
 
@@ -39,6 +39,8 @@ pydantic
 pydantic-settings
 structlog
 email-validator
+python-dotenv
+openpyxl
 
 # Suite de Tests
 pytest

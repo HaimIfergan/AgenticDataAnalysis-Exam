@@ -39,15 +39,24 @@ class APIClient:
         return response.json() if response.status_code == 200 else []
 
     @staticmethod
-    def ask_agent(query):
-        """Consomme l'agent ReAct de manière sécurisée"""
+    def ask_agent(query, file_obj=None):
+        """Consomme l'agent ReAct et renvoie stdout + figure Plotly."""
         try:
             headers = {"Authorization": f"Bearer {st.session_state.get('token')}"}
             params = {"user_id": 1, "query": query}
-            
-            # Timeout de 30s pour laisser le temps à l'agent d'analyser les données
-            response = requests.post(f"{BASE_URL}/api/chat/ask", params=params, headers=headers, timeout=30)
-            
+            files = None
+            if file_obj is not None:
+                file_obj.seek(0)
+                files = {"file": (file_obj.name, file_obj.getvalue(), file_obj.type or "text/csv")}
+
+            response = requests.post(
+                f"{BASE_URL}/api/chat/ask",
+                params=params,
+                files=files,
+                headers=headers,
+                timeout=120,
+            )
+
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, dict):
@@ -70,17 +79,22 @@ class APIClient:
         try:
             headers = {"Authorization": f"Bearer {st.session_state.get('token')}"}
             files = {"file": (file_obj.name, file_obj.getvalue(), file_obj.type)}
-            
+            data = {"user_id": 1}
+
             response = requests.post(
-                f"{BASE_URL}/api/upload", 
+                f"{BASE_URL}/api/upload",
                 headers=headers,
                 files=files,
+                data=data,
                 timeout=30
             )
             
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                if isinstance(data, dict) and data.get("error"):
+                    return False
+                return data if isinstance(data, dict) else True
             else:
-                return {"error": f"Erreur serveur ({response.status_code}) : {response.text}"}
+                return False
         except Exception as e:
-            return {"error": f"Erreur de communication : {str(e)}"}
+            return False

@@ -1,6 +1,54 @@
+import copy
 import streamlit as st
 import plotly.graph_objects as go
 from utils.api_client import APIClient
+
+_MAPBOX_TRACE_RENAMES = {
+    "scattermapbox": "scattermap",
+    "choroplethmapbox": "choroplethmap",
+    "densitymapbox": "densitymap",
+}
+
+
+def _sanitize_plotly_payload(obj):
+    """Align Plotly 5 mapbox traces/templates with Plotly 6 names."""
+    if isinstance(obj, dict):
+        if obj.get("type") in _MAPBOX_TRACE_RENAMES:
+            obj["type"] = _MAPBOX_TRACE_RENAMES[obj["type"]]
+        for old, new in _MAPBOX_TRACE_RENAMES.items():
+            if old in obj:
+                if new not in obj:
+                    obj[new] = obj.pop(old)
+                else:
+                    obj.pop(old)
+        if "mapbox" in obj:
+            if "map" not in obj:
+                obj["map"] = obj.pop("mapbox")
+            else:
+                obj.pop("mapbox")
+        for value in list(obj.values()):
+            _sanitize_plotly_payload(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            _sanitize_plotly_payload(item)
+
+
+def figure_from_payload(fig_data):
+    payload = copy.deepcopy(fig_data)
+    _sanitize_plotly_payload(payload)
+    try:
+        return go.Figure(payload)
+    except ValueError:
+        if isinstance(payload, dict) and isinstance(payload.get("layout"), dict):
+            payload["layout"].pop("template", None)
+        return go.Figure(payload)
+
+
+def render_plotly_chart(fig_data, key: str):
+    try:
+        st.plotly_chart(figure_from_payload(fig_data), key=key)
+    except Exception as e:
+        st.error(f"Erreur d'affichage du graphique : {e}")
 
 st.set_page_config(page_title="DataStream AI", layout="wide")
 
@@ -40,14 +88,20 @@ else:
     uploaded_file = st.sidebar.file_uploader("Importer un fichier (CSV, Excel)", type=["csv", "xlsx"])
     
     if uploaded_file is not None:
+        st.session_state.uploaded_file = uploaded_file
         if st.session_state.get("uploaded_file_name") != uploaded_file.name:
             with st.spinner("Transmission du fichier au serveur..."):
+                uploaded_file.seek(0)
                 success = APIClient.upload_file(uploaded_file)
                 if success:
                     st.sidebar.success(f"Fichier '{uploaded_file.name}' chargé et transmis !")
                     st.session_state.uploaded_file_name = uploaded_file.name
+                    if isinstance(success, dict) and success.get("columns"):
+                        st.sidebar.caption("Colonnes : " + ", ".join(map(str, success["columns"])))
                 else:
                     st.sidebar.error("Erreur lors de l'envoi du fichier au backend.")
+        elif st.session_state.get("uploaded_file_name") == uploaded_file.name:
+            st.sidebar.caption(f"Dataset actif : {uploaded_file.name}")
 
     st.sidebar.divider()
     st.sidebar.subheader("📜 Sessions passées")
@@ -70,7 +124,7 @@ else:
         st.session_state.messages = []
 
     # Affichage de l'historique des messages
-    for message in st.session_state.messages:
+    for i, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
             st.write(message["content"])
             # Affichage du JSON brut si disponible pour le débug
@@ -78,10 +132,7 @@ else:
                 with st.expander("🔍 Voir le JSON brut reçu du backend"):
                     st.json(message["raw"])
             if message.get("fig"):
-                try:
-                    st.plotly_chart(go.Figure(message["fig"]))
-                except Exception:
-                    pass
+                render_plotly_chart(message["fig"], key=f"plot_hist_{i}")
 
     # Saisie utilisateur
     query = st.chat_input("Analysez vos données...")
@@ -92,7 +143,10 @@ else:
             st.write(query)
             
         with st.spinner("L'agent analyse les données..."):
-            response = APIClient.ask_agent(query)
+            response = APIClient.ask_agent(
+                query,
+                file_obj=st.session_state.get("uploaded_file"),
+            )
             
             # Analyse robuste de la réponse
             output_text = None
@@ -126,7 +180,7 @@ else:
                 with st.expander("🔍 Voir le JSON brut reçu du backend"):
                     st.json(response)
                 if fig_data:
-                    try:
-                        st.plotly_chart(go.Figure(fig_data))
-                    except Exception as e:
-                        st.error(f"Erreur d'affichage du graphique : {e}")
+                    render_plotly_chart(
+                        fig_data,
+                        key=f"plot_live_{len(st.session_state.messages) - 1}",
+                    )

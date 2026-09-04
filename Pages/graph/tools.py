@@ -38,49 +38,71 @@ def complete_python_task(
         python_code: Python code to be executed to perform analyses, create a new dataset or create a visualization.
     """
     current_variables = graph_state["current_variables"] if "current_variables" in graph_state else {}
+    last_loaded = None
     for input_dataset in graph_state["input_data"]:
         if input_dataset.variable_name not in current_variables:
-            current_variables[input_dataset.variable_name] = pd.read_csv(input_dataset.data_path)
+            loaded = pd.read_csv(input_dataset.data_path)
+            current_variables[input_dataset.variable_name] = loaded
+            last_loaded = loaded
+        else:
+            last_loaded = current_variables[input_dataset.variable_name]
+    # Always expose the latest CSV as `df` for simple user questions
+    if last_loaded is not None and "df" not in current_variables:
+        current_variables["df"] = last_loaded
     if not os.path.exists("images/plotly_figures/pickle"):
         os.makedirs("images/plotly_figures/pickle")
 
     current_image_pickle_files = os.listdir("images/plotly_figures/pickle")
+    old_stdout = sys.stdout
     try:
-        # Capture stdout
-        old_stdout = sys.stdout
         sys.stdout = StringIO()
 
-        # Execute the code and capture the result
         exec_globals = globals().copy()
         exec_globals.update(persistent_vars)
         exec_globals.update(current_variables)
         exec_globals.update({"plotly_figures": []})
 
-
         exec(python_code, exec_globals)
         persistent_vars.update({k: v for k, v in exec_globals.items() if k not in globals()})
 
-        # Get the captured stdout
-        output = sys.stdout.getvalue()
+        # Capture figures even if the LLM forgot plotly_figures.append
+        figures = list(exec_globals.get("plotly_figures") or [])
+        for value in exec_globals.values():
+            if isinstance(value, go.Figure) and value not in figures:
+                figures.append(value)
+        exec_globals["plotly_figures"] = figures
 
-        # Restore stdout
-        sys.stdout = old_stdout
+        output = sys.stdout.getvalue().strip()
+        # Always give the LLM something concrete to summarize (never empty)
+        if not output:
+            if figures:
+                output = "Code exécuté avec succès. Graphique Plotly généré."
+            else:
+                output = (
+                    "Code exécuté avec succès, mais aucune sortie print() n'a été produite. "
+                    "Réaffiche le résultat avec print()."
+                )
 
         updated_state = {
             "intermediate_outputs": [{"thought": thought, "code": python_code, "output": output}],
-            "current_variables": persistent_vars
+            "current_variables": persistent_vars,
         }
 
-        if 'plotly_figures' in exec_globals:
+        if figures:
             exec(plotly_saving_code, exec_globals)
-            # Check if any images were created
             new_image_folder_contents = os.listdir("images/plotly_figures/pickle")
-            new_image_files = [file for file in new_image_folder_contents if file not in current_image_pickle_files]
+            new_image_files = [
+                file for file in new_image_folder_contents if file not in current_image_pickle_files
+            ]
             if new_image_files:
                 updated_state["output_image_paths"] = new_image_files
-            
             persistent_vars["plotly_figures"] = []
 
         return output, updated_state
     except Exception as e:
-        return str(e), {"intermediate_outputs": [{"thought": thought, "code": python_code, "output": str(e)}]}
+        error_text = f"Erreur d'exécution Python : {e}"
+        return error_text, {
+            "intermediate_outputs": [{"thought": thought, "code": python_code, "output": error_text}]
+        }
+    finally:
+        sys.stdout = old_stdout
